@@ -91,6 +91,10 @@ else
   if [ -f "$CONFIG_FILE" ]; then
     echo "[generate-config] WARNING: Existing config is invalid JSON; regenerating from defaults"
   fi
+  # Marker consumed by 21-setup-custom-provider to detect a first boot.
+  # /run is tmpfs, so this is naturally per-boot.
+  mkdir -p /run/openclaw
+  touch /run/openclaw/config-seeded
   if [ -f "$DEFAULT_CONFIG" ]; then
     cp "$DEFAULT_CONFIG" "$CONFIG_FILE"
     echo "[generate-config] Using default config from $DEFAULT_CONFIG"
@@ -110,6 +114,18 @@ fi
 if [ "${TAILSCALE_ENABLE:-false}" = "true" ]; then
   echo "[generate-config] Adding Tailscale serve config"
   jq '.gateway.tailscale.resetOnExit = true | .gateway.tailscale.mode = "serve" | .gateway.auth.allowTailscale = true' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+fi
+
+# Whitelist the origins the Control UI may be opened from. Without this, loading
+# the UI over Tailscale serve fails with "origin not allowed", because the
+# browser's origin (https://<host>.ts.net) is not the gateway's own bind address.
+# Comma-separated; the tailnet hostname is not knowable at init time because
+# tailscaled starts after cont-init, so it is supplied explicitly.
+if [ -n "${CONTROL_UI_ALLOWED_ORIGINS:-}" ]; then
+  echo "[generate-config] Allowing Control UI origins: ${CONTROL_UI_ALLOWED_ORIGINS}"
+  jq --arg o "$CONTROL_UI_ALLOWED_ORIGINS" \
+     '.gateway.controlUi.allowedOrigins = ($o | split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; "")) | map(select(length > 0)))' \
+     "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
 fi
 
 # Ensure tools.profile defaults to "coding" (2026.3.x changed default to "messaging")

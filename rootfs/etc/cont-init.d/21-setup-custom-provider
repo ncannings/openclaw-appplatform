@@ -1,0 +1,47 @@
+#!/command/with-contenv bash
+# Register a custom OpenAI-compatible model provider from environment variables.
+#
+# Enabled by the presence of CUSTOM_PROVIDER_BASE_URL. Never fails container
+# boot: a misconfigured or unreachable provider is logged and skipped so the
+# rest of the container comes up normally.
+# shellcheck source=/dev/null
+source /etc/s6-overlay/lib/env-utils.sh
+# shellcheck source=/dev/null
+source /etc/s6-overlay/lib/custom-provider.sh
+
+source_env_prefix OPENCLAW_
+
+if ! cp_enabled; then
+  exit 0
+fi
+
+CONFIG_FILE="${OPENCLAW_STATE_DIR:-/data/.openclaw}/openclaw.json"
+
+if ! cp_apply_to_config "$CONFIG_FILE"; then
+  cp_warn "custom provider not configured; continuing without it"
+  exit 0
+fi
+
+# First boot only: point the default agent model at the custom provider, so a
+# fresh deployment does not require a Gradient key. Existing user configs keep
+# whatever model they already have.
+if [ -f /run/openclaw/config-seeded ]; then
+  provider_name=$(cp_provider_name)
+  first_model=$(cp_first_model_id "$CONFIG_FILE" "$provider_name")
+  if [ -n "$first_model" ]; then
+    if jq --arg m "${provider_name}/${first_model}" \
+         '.agents.defaults.model.primary = $m' \
+         "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"; then
+      mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+      cp_log "default agent model set to ${provider_name}/${first_model} (first boot)"
+    else
+      rm -f "${CONFIG_FILE}.tmp"
+      cp_warn "could not set the default agent model"
+    fi
+  fi
+fi
+
+# This script runs as root; the openclaw service runs as user openclaw.
+chown openclaw:openclaw "$CONFIG_FILE"
+
+exit 0
