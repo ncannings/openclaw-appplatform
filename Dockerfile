@@ -134,13 +134,21 @@ RUN export SHELL=/bin/bash  && export NVM_DIR="$HOME/.nvm" \
   #    which pnpm resolves from a git repository. pnpm 11 blocks git-resolved
   #    subdependencies by default. There is no per-package allowlist yet
   #    (pnpm/pnpm#11799); narrow this to libsignal once one ships.
+  #  - node-linker=hoisted: openclaw's dependency tree contains phantom
+  #    dependencies (e.g. @mariozechner/pi-coding-agent imports @sinclair/typebox
+  #    without declaring it). pnpm's isolated store refuses to resolve those and
+  #    the gateway dies at startup with ERR_MODULE_NOT_FOUND; a flat, npm-style
+  #    layout resolves them the way the packages assume.
   && pnpm add -g \
        --config.global-bin-dir="$PNPM_HOME" \
        --config.block-exotic-subdeps=false \
+       --config.node-linker=hoisted \
        "openclaw@${OPENCLAW_VERSION}" \
-  # Fail the build here rather than crash-loop at runtime if the binary is not
-  # where every consumer expects it.
-  && test -x "$PNPM_HOME/openclaw"
+  # Smoke-test at build time rather than crash-loop at runtime. Checks both that
+  # the binary is where every consumer expects it AND that its dependency tree
+  # actually resolves - a missing transitive dep only shows up on execution.
+  && test -x "$PNPM_HOME/openclaw" \
+  && "$PNPM_HOME/openclaw" --version
 
 # Switch back to root for final setup
 USER root
