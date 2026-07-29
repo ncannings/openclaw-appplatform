@@ -19,6 +19,7 @@ ARG RESTIC_VERSION=0.17.3
 ARG NGROK_VERSION=3
 ARG YQ_VERSION=4.44.3
 ARG NVM_VERSION=0.40.4
+ARG PNPM_VERSION=11
 ARG OPENCLAW_STATE_DIR=/data/.openclaw
 ARG OPENCLAW_WORKSPACE_DIR=/data/workspace
 
@@ -116,14 +117,30 @@ RUN export SHELL=/bin/bash  && export NVM_DIR="$HOME/.nvm" \
   && nvm install --lts \
   && nvm use --lts \
   && nvm alias default lts/* \
-  && npm install -g pnpm \
-  && pnpm setup \
+  # Pin pnpm. Leaving this unpinned is what silently broke this image: a pnpm
+  # upgrade changed both the global bin directory layout and the default for
+  # blockExoticSubdeps, with no change to this Dockerfile.
+  && npm install -g "pnpm@${PNPM_VERSION}" \
+  # Export PNPM_HOME *before* `pnpm setup` so setup configures the location the
+  # rest of the image expects, rather than picking its own default.
   && export PNPM_HOME="/home/openclaw/.local/share/pnpm" \
-  && export PATH="$PNPM_HOME/bin:$PATH" \
-  # openclaw depends on libsignal (the Signal channel) which pnpm resolves from a
-  # git repository. pnpm blocks git-resolved subdependencies by default, so this
-  # single install opts out. Scoped to this command - no global config change.
-  && pnpm add -g --config.block-exotic-subdeps=false "openclaw@${OPENCLAW_VERSION}"
+  && export PATH="$PNPM_HOME:$PATH" \
+  && pnpm setup \
+  # Two per-command overrides, deliberately not global config changes:
+  #  - global-bin-dir: newer pnpm defaults to $PNPM_HOME/bin, but the openclaw
+  #    wrapper (/usr/local/bin/openclaw) and the login profile both resolve the
+  #    binary at $PNPM_HOME. Pin it so all three agree.
+  #  - block-exotic-subdeps: openclaw depends on libsignal (the Signal channel),
+  #    which pnpm resolves from a git repository. pnpm 11 blocks git-resolved
+  #    subdependencies by default. There is no per-package allowlist yet
+  #    (pnpm/pnpm#11799); narrow this to libsignal once one ships.
+  && pnpm add -g \
+       --config.global-bin-dir="$PNPM_HOME" \
+       --config.block-exotic-subdeps=false \
+       "openclaw@${OPENCLAW_VERSION}" \
+  # Fail the build here rather than crash-loop at runtime if the binary is not
+  # where every consumer expects it.
+  && test -x "$PNPM_HOME/openclaw"
 
 # Switch back to root for final setup
 USER root
