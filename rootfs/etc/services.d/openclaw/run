@@ -7,6 +7,36 @@ echo "[openclaw] Starting openclaw gateway..."
 # Allow openclaw to use tailscale
 if [ "${TAILSCALE_ENABLE:-false}" = "true" ]; then
     tailscale set --operator=openclaw
+
+    # Allow this node's own MagicDNS name as a Control UI origin.
+    #
+    # This cannot be done in cont-init: tailscaled starts afterwards, so the name
+    # is not yet known. It also cannot be hardcoded - the tailnet appends a -N
+    # suffix whenever a previous node still holds the name, which happens on
+    # every redeploy, so any static list goes stale immediately.
+    TS_DNS=""
+    for _ in $(seq 1 30); do
+        TS_DNS=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // ""' | sed 's/\.$//')
+        [ -n "$TS_DNS" ] && break
+        sleep 2
+    done
+
+    if [ -n "$TS_DNS" ]; then
+        CONFIG="${OPENCLAW_STATE_DIR:-/data/.openclaw}/openclaw.json"
+        if jq --arg o "https://${TS_DNS}" \
+             '.gateway.controlUi.allowedOrigins =
+                (((.gateway.controlUi.allowedOrigins // []) + [$o]) | unique)' \
+             "$CONFIG" > "${CONFIG}.tmp"; then
+            mv "${CONFIG}.tmp" "$CONFIG"
+            chown openclaw:openclaw "$CONFIG"
+            echo "[openclaw] allowed Control UI origin: https://${TS_DNS}"
+        else
+            rm -f "${CONFIG}.tmp"
+            echo "[openclaw] WARNING: could not add https://${TS_DNS} to allowedOrigins" >&2
+        fi
+    else
+        echo "[openclaw] WARNING: tailscale did not report a MagicDNS name; Control UI origin not added" >&2
+    fi
 fi
 
 with_env_prefix --user openclaw OPENCLAW_ -- openclaw gateway --allow-unconfigured
