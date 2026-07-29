@@ -110,6 +110,21 @@ if [ "${ENABLE_UI:-true}" = "false" ]; then
   jq '.gateway.controlUi.enabled = false' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
 fi
 
+# Drop the Gradient provider when there is no usable key. The default config
+# ships Gradient with apiKey "${GRADIENT_API_KEY}", and this script persists that
+# variable with the placeholder value "change-me" so OpenClaw can start. The
+# effect is a provider that appears in the Control UI model picker but cannot
+# authenticate: selecting one of its models fails with an opaque "agent run
+# failed before producing a reply" rather than a clear auth error.
+if [ -z "${GRADIENT_API_KEY:-}" ] || [ "${GRADIENT_API_KEY}" = "change-me" ]; then
+  echo "[generate-config] No usable GRADIENT_API_KEY; removing the gradient provider"
+  jq 'del(.models.providers.gradient)
+      | if ((.agents.defaults.model.primary // "") | startswith("gradient/"))
+        then del(.agents.defaults.model.primary)
+        else . end' \
+     "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+fi
+
 # Add Tailscale config when enabled
 if [ "${TAILSCALE_ENABLE:-false}" = "true" ]; then
   echo "[generate-config] Adding Tailscale serve config"
