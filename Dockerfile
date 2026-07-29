@@ -119,8 +119,11 @@ RUN export SHELL=/bin/bash  && export NVM_DIR="$HOME/.nvm" \
   && npm install -g pnpm \
   && pnpm setup \
   && export PNPM_HOME="/home/openclaw/.local/share/pnpm" \
-  && export PATH="$PNPM_HOME:$PATH" \
-  && pnpm add -g "openclaw@${OPENCLAW_VERSION}"
+  && export PATH="$PNPM_HOME/bin:$PATH" \
+  # openclaw depends on libsignal (the Signal channel) which pnpm resolves from a
+  # git repository. pnpm blocks git-resolved subdependencies by default, so this
+  # single install opts out. Scoped to this command - no global config change.
+  && pnpm add -g --config.block-exotic-subdeps=false "openclaw@${OPENCLAW_VERSION}"
 
 # Switch back to root for final setup
 USER root
