@@ -57,6 +57,26 @@ for i in $(seq 0 $((PATH_COUNT - 1))); do
   fi
 done
 
-# Permissions applied via /etc/digitalocean/permissions.yaml
+# Restore ownership on the trees the openclaw user must own.
+#
+# This script runs as root and restic restores archived uid/gid, so restored
+# paths can come back root-owned. permissions.yaml does declare
+# /data/.openclaw/** as openclaw-owned, but apply_permissions expands that with
+# a plain bash glob, and ** does not recurse without globstar - so nested paths
+# keep root ownership. The gateway runs as uid 1001 and then crash-loops on:
+#   EACCES: permission denied, open '/data/.openclaw/openclaw.json'
+#   EPERM:  chmod '/data/.openclaw/state'
+# A recursive chown here is cheap and makes the declared intent actually hold.
+mkdir -p /data/workspace
+for owned in /data/.openclaw /data/workspace /data/tailscale /home/openclaw; do
+  [ -e "$owned" ] || continue
+  if chown -R openclaw:openclaw "$owned" 2>/dev/null; then
+    echo "[restore-state] Ownership restored: $owned"
+  else
+    echo "[restore-state] Warning: could not fully chown $owned" >&2
+  fi
+done
+
+# Remaining permissions applied via /etc/digitalocean/permissions.yaml
 
 echo "[restore-state] Restore complete"

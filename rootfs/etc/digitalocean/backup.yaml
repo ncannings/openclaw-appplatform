@@ -24,6 +24,17 @@ paths:
       - "*.pid"
       - "*.sock"
 
+  # Must be backed up alongside /data/.openclaw. OpenClaw records workspace
+  # attestations under .openclaw, so restoring those without the workspace they
+  # attest to leaves the gateway refusing to start:
+  #   WorkspaceVanishedError: workspace appears to have disappeared after a
+  #   recent initialization: /data/workspace
+  - path: /data/workspace
+    exclude:
+      - "*.lock"
+      - "*.pid"
+      - "*.sock"
+
   - path: /data/tailscale
 
   - path: /home
