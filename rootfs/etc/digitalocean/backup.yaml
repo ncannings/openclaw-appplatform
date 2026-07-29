@@ -42,10 +42,17 @@ paths:
       - "*.lock"
       - "*.pid"
       - "*.sock"
-      # pnpm global store is managed by the Docker image (pnpm add -g openclaw@VERSION).
-      # Restoring it from backup causes version mismatches after upgrades.
-      - ".local/share/pnpm/global"
-      - ".local/share/pnpm/store"
+      # The whole pnpm tree is managed by the Docker image
+      # (pnpm add -g openclaw@VERSION), so none of it may be restored.
+      #
+      # Excluding only global/ and store/ is not enough: the launcher shim at
+      # .local/share/pnpm/openclaw hardcodes a content-hashed path into global/,
+      # e.g. global/v11/191d-19faeebf5bb-43c0a39f6cf49122/node_modules/openclaw/
+      # openclaw.mjs. Restoring that shim over a newer image points it at a hash
+      # that no longer exists, and the gateway crash-loops on:
+      #   Error: Cannot find module '.../openclaw.mjs'  MODULE_NOT_FOUND
+      # This bites on any OPENCLAW_VERSION bump with persistence enabled.
+      - ".local/share/pnpm"
 
 # Global settings
 backup_interval_seconds: 30 # 30 seconds
