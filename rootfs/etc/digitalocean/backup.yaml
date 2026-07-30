@@ -20,6 +20,8 @@ paths:
       - "*.sock"
   - path: /data/.openclaw
     exclude:
+      # npm cache: regenerable, ~45MB, rescanned every cycle for nothing
+      - "npm"
       - "*.lock"
       - "*.pid"
       - "*.sock"
@@ -55,7 +57,10 @@ paths:
       - ".local/share/pnpm"
 
 # Global settings
-backup_interval_seconds: 30 # 30 seconds
+backup_interval_seconds: 300 # 5 minutes. At 30s a ~500MB state set kept
+# restic at ~158% CPU on a 1-vCPU instance with a ~45% duty cycle, which made
+# the whole box feel unusable. Restic scans every file each run, so the cost
+# scales with file count, not change volume.
 prune_interval_seconds: 3600 # 1 hour
 
 # Retention policy (for restic forget)
