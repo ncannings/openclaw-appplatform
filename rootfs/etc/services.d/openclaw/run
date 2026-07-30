@@ -4,6 +4,25 @@ source /etc/s6-overlay/lib/env-utils.sh
 source_env_prefix OPENCLAW_
 
 echo "[openclaw] Starting openclaw gateway..."
+
+# Clear any gateway process this supervisor does not own.
+#
+# When the gateway crash-loops, an instance can survive detached from s6 while
+# still holding the 18789 listener and the startup lock. Every subsequent
+# supervised start then fails with:
+#   Gateway failed to start: gateway already running (pid N); lock timeout
+#   Port 18789 is already in use.
+# which is unrecoverable without manual intervention - the supervisor restarts
+# forever and never reclaims the port. Only ever kills processes outside this
+# service's own process group, so a healthy gateway is untouched.
+MY_PGID=$$
+for _pid in $(pgrep -f 'openclaw-gateway' 2>/dev/null); do
+    _pgid=$(ps -o pgid= -p "$_pid" 2>/dev/null | tr -d ' ')
+    if [ -n "$_pgid" ] && [ "$_pgid" != "$MY_PGID" ]; then
+        echo "[openclaw] Clearing orphaned gateway process $_pid (pgid $_pgid)"
+        kill -9 "$_pid" 2>/dev/null || true
+    fi
+done
 # Allow openclaw to use tailscale
 if [ "${TAILSCALE_ENABLE:-false}" = "true" ]; then
     tailscale set --operator=openclaw

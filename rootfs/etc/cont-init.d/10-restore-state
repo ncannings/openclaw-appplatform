@@ -47,10 +47,26 @@ for i in $(seq 0 $((PATH_COUNT - 1))); do
     continue
   fi
 
+  # Apply the same exclusions the backup uses. restic does not infer them on
+  # restore, so anything an OLDER snapshot already captured comes back forever,
+  # even after the pattern is added to backup.yaml. That is how the pnpm
+  # launcher shim kept being restored over a newer image and crash-looping the
+  # gateway with MODULE_NOT_FOUND: excluding it from future backups did nothing
+  # about the snapshots that already contained it.
+  # Mirrors the --exclude= construction in /usr/local/bin/restic-backup.
+  EXCLUDE_ARGS=""
+  EXCLUDE_COUNT=$(yq -r ".paths[$i].exclude | length // 0" "$RESTIC_BACKUP_CONFIG_FILE")
+  for j in $(seq 0 $((EXCLUDE_COUNT - 1))); do
+    PATTERN=$(yq -r ".paths[$i].exclude[$j]" "$RESTIC_BACKUP_CONFIG_FILE")
+    [ -n "$PATTERN" ] && [ "$PATTERN" != "null" ] && EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude=$PATTERN"
+  done
+
   echo "[restore-state] Restoring: $RESTORE_PATH (snapshot $SNAPSHOT_ID)"
+  [ -n "$EXCLUDE_ARGS" ] && echo "[restore-state]   excluding:$EXCLUDE_ARGS"
 
   # Run restic restore from the snapshot that contains this path
-  if restic restore "$SNAPSHOT_ID" --target / --include "$RESTORE_PATH" 2>&1; then
+  # shellcheck disable=SC2086
+  if restic restore "$SNAPSHOT_ID" --target / --include "$RESTORE_PATH" $EXCLUDE_ARGS 2>&1; then
     echo "[restore-state] Completed: $RESTORE_PATH"
   else
     echo "[restore-state] Warning: Restore may have had issues for $RESTORE_PATH (continuing)"

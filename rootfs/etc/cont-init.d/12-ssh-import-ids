@@ -29,8 +29,13 @@ if [ -n "$SSH_AUTHORIZED_USERS" ]; then
     [ -z "$line" ] && continue
     # Check if line looks like an SSH key (starts with ssh-rsa, ssh-ed25519, etc.)
     if echo "$line" | grep -qE "^ssh-(rsa|dss|ed25519|ecdsa)"; then
-      echo "$line" >> /home/ubuntu/.ssh/authorized_keys
-      echo "$line" >> /home/openclaw/.ssh/authorized_keys
+      # Append only if absent. /home is backed up and restored, so an
+      # unconditional append re-adds every key on every boot and authorized_keys
+      # grows without bound once persistence is enabled.
+      for _ak in /home/ubuntu/.ssh/authorized_keys /home/openclaw/.ssh/authorized_keys; do
+        touch "$_ak"
+        grep -qxF "$line" "$_ak" || echo "$line" >> "$_ak"
+      done
       echo "[ssh-import] Added SSH key: ${line:0:50}..."
     else
       echo "[ssh-import] Warning: Skipping invalid SSH key format: ${line:0:50}..."
